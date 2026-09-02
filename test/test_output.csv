@@ -1,0 +1,31 @@
+question_id,correct_answer,answer_received
+595,OpenAI,OpenAI
+1199,no,Cannot determine from the provided context.
+52,no,No.
+2167,no,Cannot be determined from the provided context.
+49,Insufficient information.,
+2078,Google,Google
+77,no,The provided context does not contain information about those articles.
+2179,Yes,"The provided context does not contain information about the The Verge article, so consistency cannot be assessed."
+1037,Google,Google
+460,Yes,Yes.
+1920,Insufficient information.,I don't know.
+133,no,No.
+2251,Sam Bankman-Fried,Sam Bankman‑Fried
+1995,Yes,No.
+2065,Google,Google (Alphabet)
+1631,Yes,Yes.
+502,Insufficient information.,I don't have enough information.
+374,Yes,Cannot determine from the provided context.
+182,Yes,Yes.
+128,Yes,No.
+1714,Yes,No.
+2287,Aligned,"The provided context does not contain any information about a TechCrunch article, so a comparison cannot be made."
+1412,Yes,No.
+2377,Insufficient information.,The jersey number is not mentioned in the provided context.
+1009,Sam Bankman-Fried,Sam Bankman‑Fried
+1758,Sam Bankman-Fried,Sam Bankman‑Fried
+866,Yes,No.
+809,Yes,No.
+625,Insufficient information.,
+1204,Yes,Yes.
