@@ -54,6 +54,7 @@ def build_index() -> int:
         embedding=embeddings,
         path=str(settings.qdrant_path),
         collection_name=settings.collection_name,
+        force_recreate=True,
     )
     return len(chunks)
 
