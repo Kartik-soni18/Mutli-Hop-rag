@@ -22,6 +22,21 @@ uvicorn src.api:app
 
 The API exposes retrieval at `GET /query`, Groq generation at `POST /generate`, and Cerebras generation at `POST /generate/cerebras`.
 
+`GET /query` accepts optional metadata filters. Repeating `doc_id`, `author`, or
+`source` applies an `IN` filter; filters of different kinds are combined with
+`AND`.
+
+```text
+/query?q=energy&source=Reuters&source=BBC
+/query?q=election&title_text=presidential&published_from=2023-10-01T00:00:00Z
+/query?q=technology&doc_id_min=10&doc_id_max=100
+/query?q=markets&url_prefix=https://example.com/business/
+```
+
+The supported parameters are `doc_id`, `doc_id_min`, `doc_id_max`, `title`,
+`title_text`, `author`, `source`, `published_from`, `published_to`, `url`, and
+`url_prefix`. Publication timestamps must include a timezone.
+
 ## Evaluation
 
 I currently evaluate a random sample of 30 questions from MultiHop-RAG, so this is

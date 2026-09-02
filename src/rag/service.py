@@ -1,8 +1,9 @@
 from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_qdrant import QdrantVectorStore
 
 from .config import Settings
-from .retrieval import create_retriever, retrieve
+from .retrieval import MetadataFilters, create_retriever
 
 
 class RAGService:
@@ -11,7 +12,20 @@ class RAGService:
         self.embeddings = HuggingFaceEmbeddings(
             model_name=self.settings.embedding_model
         )
-        self.retriever = create_retriever(self.settings, self.embeddings)
+        self.vectorstore = QdrantVectorStore.from_existing_collection(
+            embedding=self.embeddings,
+            path=str(self.settings.qdrant_path),
+            collection_name=self.settings.collection_name,
+        )
 
-    def retrieve(self, query: str) -> list[Document]:
-        return retrieve(query, self.retriever)
+    def retrieve(
+        self,
+        query: str,
+        metadata_filters: MetadataFilters | None = None,
+    ) -> list[Document]:
+        retriever = create_retriever(
+            vectorstore=self.vectorstore,
+            top_k=self.settings.top_k,
+            metadata_filters=metadata_filters,
+        )
+        return retriever.invoke(query.strip())
