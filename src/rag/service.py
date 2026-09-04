@@ -25,7 +25,7 @@ class RAGService:
     ) -> list[Document]:
         retriever = create_retriever(
             vectorstore=self.vectorstore,
-            top_k=self.settings.top_k,
+            top_k=self.settings.candidate_k,
             metadata_filters=metadata_filters,
         )
         return retriever.invoke(query.strip())

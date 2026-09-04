@@ -14,6 +14,8 @@ class Settings:
     qdrant_path: Path = BASE_DIR / "qdrant_db"
     collection_name: str = "multihop_rag"
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    reranker_model:str = "cross-encoder/ms-marco-MiniLM-L6-v2"
     chunk_size: int = 800
     chunk_overlap: int = 120
-    top_k: int = 3
+    candidate_k: int = 10
+    rerank_k:int = 3

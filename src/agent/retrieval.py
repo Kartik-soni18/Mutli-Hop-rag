@@ -8,7 +8,7 @@ from langchain_core.documents import Document
 from src.rag.config import Settings
 from src.rag.retrieval import MetadataFilters
 from src.rag.service import RAGService
-
+from src.rag.reranker import DocumentReranker
 
 @cache
 def get_rag_service() -> RAGService:
@@ -21,8 +21,6 @@ def parse_datetime(value: str | None) -> datetime | None:
 
 def build_filters(args: dict[str, object]) -> MetadataFilters:
     return MetadataFilters(
-        title=args.get("title"),
-        title_text=args.get("title_text"),
         authors=tuple(args.get("authors", [])),
         sources=tuple(args.get("sources", [])),
         published_from=parse_datetime(args.get("published_from")),
@@ -64,3 +62,9 @@ def retrieve_documents(
         source_filter = replace(filters, sources=(source,))
         documents.extend(rag.retrieve(query, source_filter))
     return unique_documents(documents)
+
+
+@cache
+def get_reranker() -> DocumentReranker:
+      settings = Settings()
+      return DocumentReranker(settings.reranker_model)

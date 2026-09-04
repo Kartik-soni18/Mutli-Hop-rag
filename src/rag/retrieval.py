@@ -49,20 +49,6 @@ def build_metadata_filter(metadata: MetadataFilters | None) -> Filter | None:
         return None
 
     conditions = []
-    if metadata.title is not None:
-        conditions.append(
-            FieldCondition(
-                key="metadata.title",
-                match=MatchValue(value=metadata.title),
-            )
-        )
-    if metadata.title_text is not None:
-        conditions.append(
-            FieldCondition(
-                key="metadata.title",
-                match=MatchText(text=metadata.title_text),
-            )
-        )
     if metadata.authors:
         conditions.append(_match_one_or_any("metadata.author", metadata.authors))
     if metadata.sources:

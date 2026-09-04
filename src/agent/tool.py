@@ -10,8 +10,14 @@ RAG_TOOL = {
         "parameters": {
             "type": "object",
             "properties": {
-                "title": {"type": ["string", "null"]},
-                "title_text": {"type": ["string", "null"]},
+                "retrieval_query": {
+                    "type": "string",
+                    "description": (
+                        "A concise semantic-search query rewritten from the user's "
+                        "question. Preserve the entities and facts needed to retrieve "
+                        "all supporting evidence."
+                    ),
+                },
                 "authors": {"type": "array", "items": {"type": "string"}},
                 "sources": {"type": "array", "items": {"type": "string"}},
                 "published_from": {
@@ -25,6 +31,7 @@ RAG_TOOL = {
                 "url": {"type": ["string", "null"]},
                 "url_prefix": {"type": ["string", "null"]},
             },
+            "required": ["retrieval_query"],
             "additionalProperties": False,
         },
     },
