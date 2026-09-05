@@ -59,8 +59,8 @@ def build_branches(args: dict[str, object]) -> list[RetrievalBranch]:
     if not isinstance(args, dict) or set(args) != {"branches"}:
         raise ValueError("Expected a branches object")
     branches = args["branches"]
-    if not isinstance(branches, list) or not branches:
-        raise ValueError("branches must be a nonempty list")
+    if not isinstance(branches, list) or not 1 <= len(branches) <= 6:
+        raise ValueError("branches must contain between 1 and 6 branches")
     result = []
     for branch in branches:
         if not isinstance(branch, dict) or set(branch) - set(BRANCH_PROPERTIES):
@@ -95,10 +95,18 @@ def retrieve_documents(
     rag: RAGService,
     branches: list[RetrievalBranch],
 ) -> list[Document]:
-    documents = []
-    for branch in branches:
-        documents.extend(rag.retrieve(branch.retrieval_query, branch.filters))
-    return unique_documents(documents)
+    documents = {}
+    for branch_id, branch in enumerate(branches):
+        for document in rag.retrieve(branch.retrieval_query, branch.filters):
+            key = (document.metadata.get("doc_id"), document.page_content)
+            if key not in documents:
+                document = document.model_copy(deep=True)
+                document.metadata["branch_ids"] = []
+                documents[key] = document
+            memberships = documents[key].metadata["branch_ids"]
+            if branch_id not in memberships:
+                memberships.append(branch_id)
+    return list(documents.values())
 
 
 @cache

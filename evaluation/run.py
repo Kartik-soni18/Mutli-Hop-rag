@@ -1,49 +1,84 @@
+"""Paid evaluation worker. Invoked by scripts/evaluate-and-push.sh."""
+
+import argparse
 import csv
 import json
-from dataclasses import asdict
+import random
+from datetime import UTC, datetime
 from pathlib import Path
 
-from src.agent.llm import run_groq_agent
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DATASET_PATH = PROJECT_ROOT / "data" / "MultiHopRAG.json"
-OUTPUT_PATH = Path(__file__).resolve().parent / "evaluation.csv"
-LIMIT = 4
-FIELDNAMES = [
-    "question_id",
-    "query",
-    "retrieval_branches",
-    "retrieved_context",
-    "final_answer",
-    "original_answer",
-]
+ROOT = Path(__file__).resolve().parents[1]
 
 
-def main() -> None:
-    dataset = json.loads(DATASET_PATH.read_text(encoding="utf-8"))[:LIMIT]
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--seed", type=int, required=True)
+    parser.add_argument("--commit", required=True)
+    args = parser.parse_args()
+    from src.agent.llm import run_agent
+    from src.agent.retrieval import get_rag_service
+    from src.llm.factory import create_llm
 
-    with OUTPUT_PATH.open("w", encoding="utf-8", newline="") as output_file:
-        writer = csv.DictWriter(output_file, fieldnames=FIELDNAMES)
-        writer.writeheader()
-
-        for question_id, record in enumerate(dataset, start=1):
-            print(f"[{question_id:02d}/{len(dataset)}] {record['query']}", flush=True)
-            result = run_groq_agent(record["query"])
-            writer.writerow(
-                {
-                    "question_id": question_id,
-                    "query": record["query"],
-                    "retrieval_branches": json.dumps(
-                        [asdict(branch) for branch in result.branches], default=str
-                    ),
-                    "retrieved_context": json.dumps(result.context, default=str),
-                    "final_answer": result.answer,
-                    "original_answer": record["answer"],
-                }
+    records = json.loads((ROOT / "data/MultiHopRAG.json").read_text())
+    sample = random.Random(args.seed).sample(list(enumerate(records, 1)), 100)
+    client = create_llm()
+    output = args.output_dir
+    output.mkdir(parents=True, exist_ok=True)
+    metadata = {
+        "run_id": output.name,
+        "commit": args.commit,
+        "seed": args.seed,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "model": client.config.model,
+        "status": "running",
+    }
+    (output / "run.json").write_text(json.dumps(metadata, indent=2))
+    errors = []
+    try:
+        with (output / "results.csv").open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(
+                stream, fieldnames=["question_no", "expected", "received"]
             )
-            output_file.flush()
-
-    print(f"Wrote {len(dataset)} results to {OUTPUT_PATH}")
+            writer.writeheader()
+            for position, (number, record) in enumerate(sample, 1):
+                print(f"[{position}/100] Dataset question {number}", flush=True)
+                try:
+                    received = run_agent(record["query"]).answer
+                except Exception as exc:
+                    received = "ERROR"
+                    # Do not retain provider response bodies or credentials.
+                    errors.append(
+                        {
+                            "question_no": number,
+                            "type": type(exc).__name__,
+                            "status_code": getattr(exc, "status_code", None),
+                        }
+                    )
+                writer.writerow(
+                    {
+                        "question_no": number,
+                        "expected": record["answer"],
+                        "received": received,
+                    }
+                )
+                stream.flush()
+                (output / "errors.json").write_text(json.dumps(errors, indent=2))
+                if errors and errors[-1]["status_code"] in (401, 403, 402):
+                    raise RuntimeError(
+                        "Provider authentication or billing failed; stopping."
+                    )
+        if len(errors) == 100:
+            raise RuntimeError(
+                "All questions failed; leaving the previous dashboard intact."
+            )
+        metadata["status"] = "complete"
+        metadata["errors"] = len(errors)
+        (output / "run.json").write_text(json.dumps(metadata, indent=2))
+    finally:
+        client.close()
+        if get_rag_service.cache_info().currsize:
+            get_rag_service().vectorstore.client.close()
 
 
 if __name__ == "__main__":

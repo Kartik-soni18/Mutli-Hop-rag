@@ -8,7 +8,6 @@ from .interface import LLM
 from .openai_compatible import OpenAICompatibleConfig, OpenAICompatibleLLM
 from .types import LLMCapabilities, LLMError
 
-
 load_dotenv()
 
 
@@ -23,6 +22,14 @@ class ProviderDefinition:
 
 
 OPENAI_COMPATIBLE_PROVIDERS = {
+    "aicredits": ProviderDefinition(
+        base_url_environment_variable="AICREDITS_BASE_URL",
+        default_base_url="https://api.aicredits.in/v1",
+        api_key_environment_variable="AI_CREDITS",
+        model_environment_variable="AICREDITS_MODEL",
+        default_model="inclusionai/ling-3.0-flash",
+        capabilities=LLMCapabilities(supports_tools=True),
+    ),
     "groq": ProviderDefinition(
         base_url_environment_variable="GROQ_BASE_URL",
         default_base_url="https://api.groq.com/openai/v1",
@@ -52,7 +59,7 @@ OPENAI_COMPATIBLE_PROVIDERS = {
 
 @cache
 def create_llm() -> LLM:
-    provider_name = os.getenv("LLM_PROVIDER", "groq").strip().casefold()
+    provider_name = os.getenv("LLM_PROVIDER", "aicredits").strip().casefold()
     try:
         provider = OPENAI_COMPATIBLE_PROVIDERS[provider_name]
     except KeyError as exc:

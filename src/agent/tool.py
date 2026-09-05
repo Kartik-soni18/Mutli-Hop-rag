@@ -43,6 +43,7 @@ RAG_TOOL = {
                 "branches": {
                     "type": "array",
                     "minItems": 1,
+                    "maxItems": 6,
                     "items": {
                         "type": "object",
                         "properties": BRANCH_PROPERTIES,

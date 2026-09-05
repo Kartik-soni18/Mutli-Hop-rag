@@ -17,4 +17,4 @@ class Settings:
     chunk_size: int = 400
     chunk_overlap: int = 50
     candidate_k: int = 10
-    rerank_k: int = 3
+    rerank_k: int = 6

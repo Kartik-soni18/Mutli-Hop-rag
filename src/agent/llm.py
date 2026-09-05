@@ -1,9 +1,6 @@
 import json
-import os
 from dataclasses import dataclass
 from time import perf_counter
-
-from groq import Groq
 
 from src.agent.retrieval import (
     RetrievalBranch,
@@ -14,6 +11,8 @@ from src.agent.retrieval import (
     sources_named_in,
 )
 from src.agent.tool import RAG_TOOL
+from src.llm.factory import create_llm
+from src.llm.types import CompletionOptions, LLMError, LLMMessage
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,20 +23,19 @@ class AgentResult:
     timings: dict[str, float]
 
 
-def run_groq_agent(query: str) -> AgentResult:
+def run_agent(query: str) -> AgentResult:
     total_started = perf_counter()
     query = query.strip()
     if not query:
         raise ValueError("query cannot be empty")
 
-    client = Groq(api_key=os.environ["GROQ_API_KEY"])
-    model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+    client = create_llm()
     messages = [
         {
             "role": "system",
             "content": (
                 "Plan independent retrieval branches for the distinct evidence needed "
-                "to answer the question. Return a nonempty branches array, each with "
+                "to answer the question. Return 1 to 6 branches, each with "
                 "its own focused retrieval_query and applicable filters. Create "
                 "separate "
                 "branches for named publishers; each branch has at most one source. "
@@ -53,24 +51,22 @@ def run_groq_agent(query: str) -> AgentResult:
     ]
 
     planner_started = perf_counter()
-    plan = (
-        client.chat.completions.create(
-            model=model,
-            messages=messages,
-            tools=[RAG_TOOL],
-            tool_choice="required",
+    plan = client.complete(
+        messages=[LLMMessage(**message) for message in messages],
+        tools=[RAG_TOOL],
+        tool_choice="required",
+        options=CompletionOptions(
             temperature=0,
             max_completion_tokens=2048,
             reasoning_effort="low",
             reasoning_format="hidden",
-        )
-        .choices[0]
-        .message
-    )
+        ),
+    ).message
     planner_seconds = perf_counter() - planner_started
 
-    tool_call = plan.tool_calls[0]
-    tool_arguments = json.loads(tool_call.function.arguments)
+    if len(plan.tool_calls) != 1 or plan.tool_calls[0].name != "retrieve_documents":
+        raise LLMError("Planner must return one retrieve_documents tool call")
+    tool_arguments = plan.tool_calls[0].arguments
     branches = build_branches(tool_arguments)
 
     retrieval_started = perf_counter()
@@ -79,8 +75,8 @@ def run_groq_agent(query: str) -> AgentResult:
 
     reranking_started = perf_counter()
     reranker = get_reranker()
-    reranked_documents = reranker.rerank(
-        query,
+    reranked_documents = reranker.rerank_branches(
+        [branch.retrieval_query for branch in branches],
         unranked_documents,
     )
     reranking_seconds = perf_counter() - reranking_started
@@ -98,17 +94,22 @@ def run_groq_agent(query: str) -> AgentResult:
     ]
 
     answer_started = perf_counter()
-    answer = (
-        client.chat.completions.create(
-            model=model,
-            messages=[
+    answer_response = client.complete(
+        messages=[
+            LLMMessage(**message)
+            for message in [
                 {
                     "role": "system",
                     "content": (
                         "Answer using only the supplied documents. Return only the "
-                        "shortest exact answer without explanation. And if the "
-                        "documents "
-                        "are not relevant answer Insufficient Information"
+                        "shortest exact answer without explanation. For comparisons, "
+                        "check the evidence for every required part. If any necessary "
+                        "fact is missing, ambiguous, or unsupported, answer exactly "
+                        "Insufficient Information. Never treat missing evidence or "
+                        "silence in an excerpt as proof of Yes or No. Answer Yes only "
+                        "when the evidence supports the comparison, and No only when "
+                        "the evidence explicitly establishes a contradiction. Do not "
+                        "fill evidence gaps using assumptions or outside knowledge."
                     ),
                 },
                 {
@@ -118,15 +119,18 @@ def run_groq_agent(query: str) -> AgentResult:
                         f"Documents: {json.dumps(context, default=str)}"
                     ),
                 },
-            ],
+            ]
+        ],
+        options=CompletionOptions(
             temperature=0,
             max_completion_tokens=512,
             reasoning_effort="low",
             reasoning_format="hidden",
-        )
-        .choices[0]
-        .message.content.strip()
+        ),
     )
+    answer = (answer_response.message.content or "").strip()
+    if not answer:
+        raise LLMError("Answer generation returned empty content")
     answer_seconds = perf_counter() - answer_started
     total_seconds = perf_counter() - total_started
 
@@ -144,5 +148,10 @@ def run_groq_agent(query: str) -> AgentResult:
     )
 
 
-def generate_groq(query: str) -> str:
-    return run_groq_agent(query).answer
+def generate(query: str) -> str:
+    return run_agent(query).answer
+
+
+# Preserve older scripts while routing through the configured provider.
+run_groq_agent = run_agent
+generate_groq = generate
