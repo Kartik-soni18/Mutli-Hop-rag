@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from pathlib import Path
 
 from langchain_core.documents import Document
@@ -20,7 +21,12 @@ def load_corpus(path: Path) -> list[Document]:
                 "title": item["title"],
                 "author": item["author"],
                 "source": item["source"],
-                "published_at": item["published_at"],
+                "published_at": date.fromisoformat(
+                    item["published_at"][:10]
+                ).isoformat(),
+                "published_date_ordinal": date.fromisoformat(
+                    item["published_at"][:10]
+                ).toordinal(),
                 "url": item["url"],
             },
         )

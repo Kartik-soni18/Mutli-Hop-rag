@@ -1,15 +1,13 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date
 
 from langchain_core.retrievers import BaseRetriever
 from langchain_qdrant import QdrantVectorStore
 from qdrant_client.models import (
-    DatetimeRange,
     FieldCondition,
     Filter,
     MatchAny,
     MatchPrefix,
-    MatchText,
     MatchValue,
     Range,
 )
@@ -21,8 +19,8 @@ class MetadataFilters:
     title_text: str | None = None
     authors: tuple[str, ...] = ()
     sources: tuple[str, ...] = ()
-    published_from: datetime | None = None
-    published_to: datetime | None = None
+    published_from: date | None = None
+    published_to: date | None = None
     url: str | None = None
     url_prefix: str | None = None
 
@@ -56,10 +54,14 @@ def build_metadata_filter(metadata: MetadataFilters | None) -> Filter | None:
     if metadata.published_from is not None or metadata.published_to is not None:
         conditions.append(
             FieldCondition(
-                key="metadata.published_at",
-                range=DatetimeRange(
-                    gte=metadata.published_from,
-                    lte=metadata.published_to,
+                key="metadata.published_date_ordinal",
+                range=Range(
+                    gte=metadata.published_from.toordinal()
+                    if metadata.published_from
+                    else None,
+                    lte=metadata.published_to.toordinal()
+                    if metadata.published_to
+                    else None,
                 ),
             )
         )

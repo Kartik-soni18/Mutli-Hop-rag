@@ -21,3 +21,6 @@ line-length = 88
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+
+[project.optional-dependencies]
+dev = ["jsonschema>=4.0", "ruff>=0.9"]

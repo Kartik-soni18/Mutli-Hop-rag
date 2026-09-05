@@ -1,25 +1,24 @@
 import json
 import os
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from time import perf_counter
 
 from groq import Groq
 
 from src.agent.retrieval import (
-    build_filters,
+    RetrievalBranch,
+    build_branches,
     get_rag_service,
     get_reranker,
     retrieve_documents,
     sources_named_in,
 )
 from src.agent.tool import RAG_TOOL
-from src.rag.retrieval import MetadataFilters
 
 
 @dataclass(frozen=True, slots=True)
 class AgentResult:
-    retrieval_query: str
-    filters: MetadataFilters
+    branches: list[RetrievalBranch]
     context: list[dict[str, object]]
     answer: str
     timings: dict[str, float]
@@ -37,90 +36,102 @@ def run_groq_agent(query: str) -> AgentResult:
         {
             "role": "system",
             "content": (
-                "Select metadata filters and rewrite the user's question into one "
-                "concise semantic-search query. Return the rewritten query in the "
-                "retrieval_query tool argument. Preserve all entities and facts "
-                "needed to retrieve the supporting evidence; do not answer the "
-                "question and do not invent metadata."
+                "Plan independent retrieval branches for the distinct evidence needed "
+                "to answer the question. Return a nonempty branches array, each with "
+                "its own focused retrieval_query and applicable filters. Create "
+                "separate "
+                "branches for named publishers; each branch has at most one source. "
+                "Use source-free branches when no publisher is specified. Preserve "
+                "entities and facts, do not answer, and do not invent metadata. "
+                "Publication bounds must be YYYY-MM-DD dates only, with both endpoints "
+                "inclusive. For one day set both bounds to that date; "
+                "omit unknown bounds. "
+                f"Detected publishers: {json.dumps(sources_named_in(query))}."
             ),
         },
         {"role": "user", "content": query},
     ]
 
     planner_started = perf_counter()
-    plan = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        tools=[RAG_TOOL],
-        tool_choice="required",
-        temperature=0,
-        max_completion_tokens=512,
-        reasoning_effort="low",
-        reasoning_format="hidden",
-    ).choices[0].message
+    plan = (
+        client.chat.completions.create(
+            model=model,
+            messages=messages,
+            tools=[RAG_TOOL],
+            tool_choice="required",
+            temperature=0,
+            max_completion_tokens=2048,
+            reasoning_effort="low",
+            reasoning_format="hidden",
+        )
+        .choices[0]
+        .message
+    )
     planner_seconds = perf_counter() - planner_started
 
     tool_call = plan.tool_calls[0]
     tool_arguments = json.loads(tool_call.function.arguments)
-    retrieval_query = str(tool_arguments["retrieval_query"]).strip()
-    if not retrieval_query:
-        retrieval_query = query
-
-    filters = build_filters(tool_arguments)
-    named_sources = sources_named_in(query)
-    if named_sources:
-        filters = replace(filters, sources=named_sources)
+    branches = build_branches(tool_arguments)
 
     retrieval_started = perf_counter()
-    unranked_documents = retrieve_documents(
-        get_rag_service(), retrieval_query, filters
-    )
+    unranked_documents = retrieve_documents(get_rag_service(), branches)
     retrieval_seconds = perf_counter() - retrieval_started
 
     reranking_started = perf_counter()
     reranker = get_reranker()
     reranked_documents = reranker.rerank(
-        retrieval_query,
+        query,
         unranked_documents,
     )
     reranking_seconds = perf_counter() - reranking_started
 
     context = [
-        {"content": document.page_content, "metadata": document.metadata}
+        {
+            "content": document.page_content,
+            "metadata": {
+                k: v
+                for k, v in document.metadata.items()
+                if k != "published_date_ordinal"
+            },
+        }
         for document in reranked_documents
     ]
 
     answer_started = perf_counter()
-    answer = client.chat.completions.create(
-        model=model,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "Answer using only the supplied documents. Return only the "
-                    "shortest exact answer without explanation. And if the documents "
-                    "are not relevant answer Insufficient Information"
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Question: {query}\n\n"
-                    f"Documents: {json.dumps(context, default=str)}"
-                ),
-            },
-        ],
-        temperature=0,
-        max_completion_tokens=512,
-        reasoning_effort="low",
-        reasoning_format="hidden",
-    ).choices[0].message.content.strip()
+    answer = (
+        client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Answer using only the supplied documents. Return only the "
+                        "shortest exact answer without explanation. And if the "
+                        "documents "
+                        "are not relevant answer Insufficient Information"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Question: {query}\n\n"
+                        f"Documents: {json.dumps(context, default=str)}"
+                    ),
+                },
+            ],
+            temperature=0,
+            max_completion_tokens=512,
+            reasoning_effort="low",
+            reasoning_format="hidden",
+        )
+        .choices[0]
+        .message.content.strip()
+    )
     answer_seconds = perf_counter() - answer_started
     total_seconds = perf_counter() - total_started
 
     return AgentResult(
-        retrieval_query=retrieval_query,
-        filters=filters,
+        branches=branches,
         context=context,
         answer=answer,
         timings={

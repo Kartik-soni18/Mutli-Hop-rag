@@ -1,9 +1,9 @@
 import csv
 import json
+from dataclasses import asdict
 from pathlib import Path
 
 from src.agent.llm import run_groq_agent
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATASET_PATH = PROJECT_ROOT / "data" / "MultiHopRAG.json"
@@ -12,7 +12,7 @@ LIMIT = 4
 FIELDNAMES = [
     "question_id",
     "query",
-    "rag_query",
+    "retrieval_branches",
     "retrieved_context",
     "final_answer",
     "original_answer",
@@ -33,7 +33,9 @@ def main() -> None:
                 {
                     "question_id": question_id,
                     "query": record["query"],
-                    "rag_query": result.retrieval_query,
+                    "retrieval_branches": json.dumps(
+                        [asdict(branch) for branch in result.branches], default=str
+                    ),
                     "retrieved_context": json.dumps(result.context, default=str),
                     "final_answer": result.answer,
                     "original_answer": record["answer"],
