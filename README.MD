@@ -4,7 +4,13 @@
 
 ![Evaluation progress](assets/evaluation.svg)
 
-**Awaiting first evaluation.** No paid evaluation has populated this dashboard yet.
+**Latest: 14/100 normalized exact matches** · Errors: 27 · Updated: 2026-09-05T13:45:50.223226+00:00
+
+| Evaluated commit | Matches | Errors | UTC timestamp |
+| :-- | --: | --: | :-- |
+| `9bd4a9ac` | 14/100 | 27 | 2026-09-05T13:45:50.223226+00:00 |
+
+[Latest answers](results.csv) · [Full history](evaluation/history.csv)
 
 <!-- evaluation-dashboard:end -->
 
