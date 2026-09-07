@@ -8,16 +8,17 @@ DATE_BOUND = {
     ),
 }
 
+# Keep free-text fields free of regex constraints: the provider can interpret
+# an unanchored single-character pattern as the entire allowed value.
+# Nonblank values are validated by build_branches/build_filters.
 BRANCH_PROPERTIES = {
     "retrieval_query": {
         "type": "string",
         "minLength": 1,
-        "pattern": r"\S",
         "description": "A focused query for the supporting evidence in this branch.",
     },
     "source": {
         "type": ["string", "null"],
-        "pattern": r"\S",
         "description": "One publisher for this branch, or null for any source.",
     },
     "authors": {"type": "array", "items": {"type": "string"}},

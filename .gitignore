@@ -30,3 +30,5 @@ temp.json
 # Local evaluation archives and process lock
 evaluation/runs/
 .evaluation-lock/
+temp.py
+temp.csv

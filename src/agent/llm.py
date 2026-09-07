@@ -151,7 +151,8 @@ def _run_agent(query: str) -> AgentResult:
         ],
         purpose="final_answer",
         context_ids=[d.metadata.get("_id") for d in reranked_documents],
-        max_tokens=512,
+        # The provider includes reasoning in the completion-token budget.
+        max_tokens=8192,
     )
     answer = (answer_response.content or "").strip()
     if not answer:

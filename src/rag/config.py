@@ -14,7 +14,9 @@ class Settings:
     collection_name: str = "multihop_rag"
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L6-v2"
-    chunk_size: int = 400
-    chunk_overlap: int = 50
+    chunk_min_tokens: int = 100
+    chunk_target_tokens: int = 300
+    chunk_max_tokens: int = 500
+    chunk_semantic_percentile: float = 75
     candidate_k: int = 10
     rerank_k: int = 6
