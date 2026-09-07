@@ -1,6 +1,8 @@
 from langchain_core.documents import Document
 from sentence_transformers import CrossEncoder
 
+from src.observability.tracing import record_reranker_scores, safe
+
 from .config import Settings
 
 
@@ -28,7 +30,7 @@ class DocumentReranker:
             document = document.model_copy(deep=True)
             document.metadata["reranker_score"] = float(score)
             results.append(document)
-        return results[:min(Settings().rerank_k, 6)]
+        return results[: min(Settings().rerank_k, 6)]
 
     def rerank_branches(
         self,
@@ -46,10 +48,12 @@ class DocumentReranker:
         ]
         if not pairs:
             return []
-        scores = self.model.predict([
-            (queries[branch_id], documents[document_id].page_content)
-            for branch_id, document_id in pairs
-        ])
+        scores = self.model.predict(
+            [
+                (queries[branch_id], documents[document_id].page_content)
+                for branch_id, document_id in pairs
+            ]
+        )
         rankings = [[] for _ in queries]
         branch_scores = [{} for _ in documents]
         for (branch_id, document_id), score in zip(pairs, scores, strict=True):
@@ -58,6 +62,13 @@ class DocumentReranker:
         for ranking in rankings:
             ranking.sort(key=lambda item: item[1], reverse=True)
 
+        safe(
+            record_reranker_scores,
+            [
+                {"chunk_id": str(doc.metadata.get("_id", "")), "scores": scores}
+                for doc, scores in zip(documents, branch_scores, strict=True)
+            ],
+        )
         selected = []
         selected_ids = set()
         coverage = [0] * len(queries)

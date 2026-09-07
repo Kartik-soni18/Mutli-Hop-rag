@@ -18,7 +18,7 @@ def main():
     args = parser.parse_args()
     from src.agent.llm import run_agent
     from src.agent.retrieval import get_rag_service
-    from src.llm.factory import create_llm
+    from src.llm.client import create_llm
 
     records = json.loads((ROOT / "data/MultiHopRAG.json").read_text())
     sample = random.Random(args.seed).sample(list(enumerate(records, 1)), 100)
@@ -76,6 +76,8 @@ def main():
         metadata["errors"] = len(errors)
         (output / "run.json").write_text(json.dumps(metadata, indent=2))
     finally:
+        from src.observability.langfuse_adapter import flush
+        flush()
         client.close()
         if get_rag_service.cache_info().currsize:
             get_rag_service().vectorstore.client.close()

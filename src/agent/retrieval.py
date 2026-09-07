@@ -3,9 +3,11 @@ import re
 from dataclasses import dataclass
 from datetime import date
 from functools import cache
+from time import perf_counter
 
 from langchain_core.documents import Document
 
+from src.observability.tracing import chunk_metadata, enabled, observation
 from src.rag.config import Settings
 from src.rag.reranker import DocumentReranker
 from src.rag.retrieval import MetadataFilters
@@ -95,17 +97,57 @@ def retrieve_documents(
     rag: RAGService,
     branches: list[RetrievalBranch],
 ) -> list[Document]:
+    vectors = []
+    timings = []
+    with observation("embedding", embedding_model=rag.settings.embedding_model) as span:
+        started = perf_counter()
+        for branch in branches:
+            branch_started = perf_counter()
+            vectors.append(rag.embeddings.embed_query(branch.retrieval_query))
+            timings.append((perf_counter() - branch_started) * 1000)
+        span.update(
+            embedding_latency_ms=(perf_counter() - started) * 1000,
+            branch_latency_ms=timings,
+            branch_count=len(branches),
+        )
+
     documents = {}
-    for branch_id, branch in enumerate(branches):
-        for document in rag.retrieve(branch.retrieval_query, branch.filters):
-            key = (document.metadata.get("doc_id"), document.page_content)
-            if key not in documents:
-                document = document.model_copy(deep=True)
-                document.metadata["branch_ids"] = []
-                documents[key] = document
-            memberships = documents[key].metadata["branch_ids"]
-            if branch_id not in memberships:
-                memberships.append(branch_id)
+    results = []
+    with observation(
+        "retrieval",
+        top_k=rag.settings.candidate_k,
+        embedding_model=rag.settings.embedding_model,
+    ) as span:
+        started = perf_counter()
+        for branch_id, (branch, vector) in enumerate(
+            zip(branches, vectors, strict=True)
+        ):
+            branch_started = perf_counter()
+            found = rag.search(vector, branch.filters)
+            results.append(
+                {
+                    "branch_id": branch_id,
+                    "vector_search_latency_ms": (perf_counter() - branch_started)
+                    * 1000,
+                    "chunks": chunk_metadata(found),
+                }
+            )
+            for document in found:
+                key = (document.metadata.get("doc_id"), document.page_content)
+                if key not in documents:
+                    document = document.model_copy(deep=True)
+                    document.metadata["branch_ids"] = []
+                    documents[key] = document
+                memberships = documents[key].metadata["branch_ids"]
+                if branch_id not in memberships:
+                    memberships.append(branch_id)
+        span.update(
+            vector_search_latency_ms=(perf_counter() - started) * 1000,
+            branches=results,
+            chunks=chunk_metadata(list(documents.values())),
+        )
+        if enabled("chunk_text"):
+            span.payload(output=[d.page_content for d in documents.values()])
     return list(documents.values())
 
 

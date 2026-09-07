@@ -4,11 +4,12 @@ version = "0.1.0"
 description = "A reproducible LangChain and Qdrant baseline for MultiHop-RAG"
 requires-python = ">=3.12"
 dependencies = [
-    "cerebras-cloud-sdk>=1.0",
     "fastapi>=0.115",
-    "groq>=1.6.0",
     "httpx>=0.27",
-    "langchain-core>=1.0",
+    "langchain-core>=1.6.0",
+    "langchain-openai==1.6.0",
+    "openai==3.8.0",
+    "langfuse==4.15.1",
     "langchain-huggingface>=1.0",
     "langchain-qdrant>=1.0",
     "langchain-text-splitters>=1.0",
@@ -24,4 +25,4 @@ line-length = 88
 select = ["E", "F", "I", "UP"]
 
 [project.optional-dependencies]
-dev = ["jsonschema>=4.0", "ruff>=0.9"]
+dev = ["pytest==9.1.1", "jsonschema>=4.0", "ruff>=0.9"]

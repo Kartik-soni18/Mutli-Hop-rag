@@ -1,5 +1,5 @@
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from time import perf_counter
 
 from src.agent.retrieval import (
@@ -11,8 +11,13 @@ from src.agent.retrieval import (
     sources_named_in,
 )
 from src.agent.tool import RAG_TOOL
-from src.llm.factory import create_llm
-from src.llm.types import CompletionOptions, LLMError, LLMMessage
+from src.llm.client import create_llm
+from src.observability.tracing import (
+    chunk_metadata,
+    enabled,
+    observation,
+    request_trace,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,9 +26,23 @@ class AgentResult:
     context: list[dict[str, object]]
     answer: str
     timings: dict[str, float]
+    request_id: str | None = None
+    trace_id: str | None = None
+    llm_calls: list[dict] = field(default_factory=list)
 
 
-def run_agent(query: str) -> AgentResult:
+def run_agent(query: str, *, request_id=None, session_id=None) -> AgentResult:
+    with request_trace(request_id, session_id) as trace:
+        result = _run_agent(query)
+        return replace(
+            result,
+            request_id=trace.request_id,
+            trace_id=trace.trace_id,
+            llm_calls=trace.llm_calls,
+        )
+
+
+def _run_agent(query: str) -> AgentResult:
     total_started = perf_counter()
     query = query.strip()
     if not query:
@@ -52,21 +71,16 @@ def run_agent(query: str) -> AgentResult:
 
     planner_started = perf_counter()
     plan = client.complete(
-        messages=[LLMMessage(**message) for message in messages],
+        messages=messages,
+        purpose="tool_call",
         tools=[RAG_TOOL],
-        tool_choice="required",
-        options=CompletionOptions(
-            temperature=0,
-            max_completion_tokens=2048,
-            reasoning_effort="low",
-            reasoning_format="hidden",
-        ),
-    ).message
+        max_tokens=2048,
+    )
     planner_seconds = perf_counter() - planner_started
 
-    if len(plan.tool_calls) != 1 or plan.tool_calls[0].name != "retrieve_documents":
-        raise LLMError("Planner must return one retrieve_documents tool call")
-    tool_arguments = plan.tool_calls[0].arguments
+    if len(plan.tool_calls) != 1 or plan.tool_calls[0]["name"] != "retrieve_documents":
+        raise ValueError("Planner must return one retrieve_documents tool call")
+    tool_arguments = plan.tool_calls[0]["args"]
     branches = build_branches(tool_arguments)
 
     retrieval_started = perf_counter()
@@ -74,11 +88,25 @@ def run_agent(query: str) -> AgentResult:
     retrieval_seconds = perf_counter() - retrieval_started
 
     reranking_started = perf_counter()
-    reranker = get_reranker()
-    reranked_documents = reranker.rerank_branches(
-        [branch.retrieval_query for branch in branches],
-        unranked_documents,
-    )
+    with observation(
+        "reranking",
+        reranker_model=get_rag_service().settings.reranker_model,
+        input_chunk_count=len(unranked_documents),
+        scored_pairs=[],
+        top_n=min(get_rag_service().settings.rerank_k, 6),
+        chunks_before=chunk_metadata(unranked_documents),
+    ) as span:
+        reranker = get_reranker()
+        reranked_documents = reranker.rerank_branches(
+            [branch.retrieval_query for branch in branches],
+            unranked_documents,
+        )
+        span.update(
+            chunks_after=chunk_metadata(reranked_documents),
+            reranking_latency_ms=(perf_counter() - reranking_started) * 1000,
+        )
+        if enabled("chunk_text"):
+            span.payload(output=[d.page_content for d in reranked_documents])
     reranking_seconds = perf_counter() - reranking_started
 
     context = [
@@ -96,7 +124,7 @@ def run_agent(query: str) -> AgentResult:
     answer_started = perf_counter()
     answer_response = client.complete(
         messages=[
-            LLMMessage(**message)
+            message
             for message in [
                 {
                     "role": "system",
@@ -121,16 +149,13 @@ def run_agent(query: str) -> AgentResult:
                 },
             ]
         ],
-        options=CompletionOptions(
-            temperature=0,
-            max_completion_tokens=512,
-            reasoning_effort="low",
-            reasoning_format="hidden",
-        ),
+        purpose="final_answer",
+        context_ids=[d.metadata.get("_id") for d in reranked_documents],
+        max_tokens=512,
     )
-    answer = (answer_response.message.content or "").strip()
+    answer = (answer_response.content or "").strip()
     if not answer:
-        raise LLMError("Answer generation returned empty content")
+        raise ValueError("Answer generation returned empty content")
     answer_seconds = perf_counter() - answer_started
     total_seconds = perf_counter() - total_started
 
@@ -150,8 +175,3 @@ def run_agent(query: str) -> AgentResult:
 
 def generate(query: str) -> str:
     return run_agent(query).answer
-
-
-# Preserve older scripts while routing through the configured provider.
-run_groq_agent = run_agent
-generate_groq = generate

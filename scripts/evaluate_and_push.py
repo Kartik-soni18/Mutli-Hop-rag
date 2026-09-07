@@ -75,7 +75,6 @@ def main():
         load_dotenv(ROOT / ".env")
         if not os.environ.get("AI_CREDITS"):
             raise RuntimeError("Missing AI_CREDITS in the environment or local .env.")
-        os.environ["LLM_PROVIDER"] = "aicredits"
         seed = secrets.randbits(32)
         run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%S") + f"-{seed}"
         run_dir = ROOT / "evaluation/runs" / run_id
